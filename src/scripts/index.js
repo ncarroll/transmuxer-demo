@@ -10,11 +10,8 @@ video.onerror = () => {
 
 let assetURL = "http://localhost:8080/public/proxy.ts";
 
-let transmuxer = new muxjs.mp4.Transmuxer();
-
 // Video and audio codec - currently not working.
 //let mimeCodec = 'video/mp4; codecs="avc1.42E01E,mp4a.40.2"';
-
 // Video only codec
 let mimeCodec = 'video/mp4; codecs="avc1.42E01E"';
 
@@ -29,7 +26,28 @@ if ("MediaSource" in window && MediaSource.isTypeSupported(mimeCodec)) {
 function sourceOpen(_) {
     let mediaSource = this;
     let sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
+    let transmuxer = new muxjs.mp4.Transmuxer();
     
+    fetch(assetURL).then(response => {
+        return response.arrayBuffer();
+    }).then(buffer => {
+        console.log("Fetched asset");
+
+        transmuxer.push(new Uint8Array(buffer));
+        transmuxer.flush();
+    });
+
+    transmuxer.on('data', (segment) => {
+        console.log("Remuxing data...");
+
+        let data = new Uint8Array(segment.initSegment.byteLength + segment.data.byteLength);
+        data.set(segment.initSegment, 0);
+        data.set(segment.data, segment.initSegment.byteLength);
+
+        console.log(muxjs.mp4.tools.textify(muxjs.mp4.tools.inspect(data), null, ' '));
+        sourceBuffer.appendBuffer(data);
+    });
+
     sourceBuffer.addEventListener("updateend", () => {
         if (!sourceBuffer.updating && mediaSource.readyState === "open") {
             console.log("End of stream");
@@ -38,23 +56,5 @@ function sourceOpen(_) {
 
         console.log("Play video");
         video.play();
-    });
-
-    transmuxer.on('data', (segment) => {
-        let data = new Uint8Array(segment.initSegment.byteLength + segment.data.byteLength);
-        data.set(segment.initSegment, 0);
-        data.set(segment.data, segment.initSegment.byteLength);
-
-        console.log(muxjs.mp4.tools.inspect(data));
-        sourceBuffer.appendBuffer(data);
-    });
-
-    fetch(assetURL).then(response => {
-        return response.arrayBuffer();
-    }).then(buffer => {
-        console.log("Fetched asset");
-
-        transmuxer.push(new Uint8Array(buffer));
-        transmuxer.flush();
     });
 }
